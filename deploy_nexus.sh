@@ -10,10 +10,9 @@ NC='\033[0m'
 NEXUS_HOME="$HOME/.nexus"
 PROVER_ID_FILE="$NEXUS_HOME/prover-id"
 SCREEN_SESSION="nexus-prover"
-PROGRAM_DIR="$NEXUS_HOME/src/generated"
+PROVER_LOG="$NEXUS_HOME/prover.log"
 ARCH=$(uname -m)
 OS=$(uname -s)
-REPO_BASE="https://github.com/nexus-xyz/network-api/raw/refs/tags/0.4.2/clients/cli"
 
 # 检查 OpenSSL 版本
 check_openssl_version() {
@@ -61,8 +60,8 @@ check_dependencies() {
     fi
 }
 
-# 下载 Prover 和相关文件
-download_files() {
+# 下载 Prover
+download_prover() {
     mkdir -p "$NEXUS_HOME"
     local prover_path="$NEXUS_HOME/prover"
 
@@ -88,7 +87,7 @@ setup_prover_id() {
     if [ -n "$1" ]; then
         echo "$1" > "$PROVER_ID_FILE"
         echo -e "${GREEN}使用传入的 Prover ID: $1${NC}"
-    elif [ ! -f "$PROVER_ID_FILE" ]; then
+    elif [ ! -f "$PROVER_ID_FILE" ];then
         local random_id=$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 28)
         echo "$random_id" > "$PROVER_ID_FILE"
         echo -e "${GREEN}生成新的 Prover ID: $random_id${NC}"
@@ -102,7 +101,7 @@ stop_prover() {
     if screen -list | grep -q "$SCREEN_SESSION"; then
         echo -e "${YELLOW}停止当前运行的 Prover 会话...${NC}"
         screen -S "$SCREEN_SESSION" -X quit
-        echo -e "${GREEN}Prover 已停止${NC}"
+        echo -e "${GREEN}Prover 会话已停止${NC}"
     else
         echo -e "${RED}没有正在运行的 Prover 会话${NC}"
     fi
@@ -111,8 +110,15 @@ stop_prover() {
 # 启动 Prover
 start_prover() {
     echo -e "${YELLOW}启动 Prover 会话...${NC}"
-    screen -dmS "$SCREEN_SESSION" bash -c "cd '$NEXUS_HOME' && ./prover beta.orchestrator.nexus.xyz"
-    echo -e "${GREEN}Prover 已启动，screen 会话名称: $SCREEN_SESSION${NC}"
+    screen -dmS "$SCREEN_SESSION" bash -c "cd '$NEXUS_HOME' && ./prover beta.orchestrator.nexus.xyz > $PROVER_LOG 2>&1"
+
+    sleep 2  # 等待 screen 稳定
+    if screen -list | grep -q "$SCREEN_SESSION"; then
+        echo -e "${GREEN}Prover 已启动，screen 会话名称: $SCREEN_SESSION${NC}"
+    else
+        echo -e "${RED}Prover 启动失败，请检查日志: $PROVER_LOG${NC}"
+        exit 1
+    fi
 }
 
 # 主逻辑
@@ -121,15 +127,15 @@ main() {
 
     echo -e "${YELLOW}=== 开始部署 Nexus Prover ===${NC}"
 
-    # 停止任何已运行的 Prover
+    # 停止已运行的 Prover
     stop_prover
 
     # 检查依赖
     check_openssl_version
     check_dependencies
 
-    # 下载文件
-    download_files
+    # 下载 Prover
+    download_prover
 
     # 设置 Prover ID
     setup_prover_id "$prover_id"
@@ -138,6 +144,7 @@ main() {
     start_prover
 
     echo -e "${GREEN}部署完成！使用 screen -r $SCREEN_SESSION 查看运行状态${NC}"
+    echo -e "${GREEN}日志文件: $PROVER_LOG${NC}"
 }
 
 # 脚本入口
